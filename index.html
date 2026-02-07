@@ -1,13 +1,314 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AI Hospital Scheduler</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Waste Sorter & Mappls Recycler</title>
+    <style>
+        :root {
+            --primary: #2e7d32;
+            --secondary: #4caf50;
+            --light: #f1f8e9;
+            --dark: #1b5e20;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            color: var(--primary);
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .upload-section {
+            text-align: center;
+            padding: 20px;
+            border: 2px dashed var(--secondary);
+            border-radius: 8px;
+            margin-bottom: 20px;
+            background: var(--light);
+        }
+
+        #imagePreview {
+            max-width: 100%;
+            max-height: 300px;
+            margin-top: 10px;
+            border-radius: 8px;
+            display: none;
+        }
+
+        button {
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 10px;
+            width: 100%;
+            transition: background 0.3s;
+        }
+
+        button:hover {
+            background-color: var(--dark);
+        }
+
+        .result-box {
+            display: none;
+            margin-top: 20px;
+            padding: 15px;
+            border-left: 5px solid var(--primary);
+            background: #fff;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        .loader {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+            font-weight: bold;
+            color: var(--primary);
+        }
+
+        /* Mappls Map Container */
+        #map {
+            height: 400px;
+            width: 100%;
+            margin-top: 20px;
+            border-radius: 8px;
+            display: none;
+            border: 1px solid #ccc;
+        }
+        
+        .api-input {
+            margin-bottom: 20px;
+            padding: 10px;
+            background: #fff3e0;
+            border-radius: 5px;
+            font-size: 12px;
+        }
+        .api-input input {
+            width: 95%;
+            padding: 8px;
+            margin-top: 5px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>♻️ AI Eco-Sorter (Mappls)</h1>
+    
+    <div class="api-input">
+        <strong>Configuration:</strong><br>
+        <label>Gemini API Key:</label>
+        <input type="text" id="geminiKey" placeholder="Paste Gemini API Key">
+        
+        <label style="margin-top:10px; display:block;">Mappls Map Key:</label>
+        <input type="text" id="mapplsKey" placeholder="Paste Mappls API/Map Key">
+        
+        <button onclick="loadMapplsSystem()" style="margin-top:10px; padding: 8px;">Initialize Map System</button>
+    </div>
+
+    <div class="upload-section">
+        <input type="file" id="imageInput" accept="image/*" capture="environment">
+        <br>
+        <img id="imagePreview" alt="Preview">
+    </div>
+
+    <button id="analyzeBtn" onclick="analyzeImage()">🔍 Analyze Garbage</button>
+
+    <div id="loader" class="loader">Thinking... 🤖</div>
+
+    <div id="result" class="result-box">
+        <h2 id="itemName"></h2>
+        <p><strong>Type:</strong> <span id="itemType"></span></p>
+        <p><strong>Recyclable:</strong> <span id="isRecyclable"></span></p>
+        <div id="steps"></div>
+    </div>
+
+    <div id="map"></div>
+</div>
+
+<script>
+    // --- Global Variables ---
+    let mapObject;
+    let mapplsLoaded = false;
+
+    // --- 1. Image Preview Logic ---
+    const imageInput = document.getElementById('imageInput');
+    const imagePreview = document.getElementById('imagePreview');
+    let base64Image = "";
+
+    imageInput.addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                imagePreview.src = e.target.result;
+                imagePreview.style.display = 'block';
+                base64Image = e.target.result.split(',')[1];
+            }
+            reader.readAsDataURL(file);
+        }
+    });
+
+    // --- 2. Load Mappls SDK Dynamically ---
+    function loadMapplsSystem() {
+        /*const key = "iajvhgtoximgzvshwiyekeumbbmedkbftuqg";*/
+        const key = document.getElementById('mapplsKey').value;
+        if(!key) { alert("Please enter Mappls Key"); return; }
+
+        // Inject Main SDK
+        const scriptSDK = document.createElement('script');
+        scriptSDK.src = `https://apis.mappls.com/advancedmaps/api/${key}/map_sdk?layer=vector&v=3.0&callback=onMapSdkLoad`;
+        document.head.appendChild(scriptSDK);
+        
+        // Inject Plugins (Needed for Search)
+        const scriptPlugin = document.createElement('script');
+        scriptPlugin.src = `https://apis.mappls.com/advancedmaps/api/${key}/map_sdk_plugins?v=3.0&libraries=nearby`;
+        document.head.appendChild(scriptPlugin);
+
+        alert("Loading Mappls System...");
+    }
+
+    function onMapSdkLoad() {
+        mapplsLoaded = true;
+        console.log("Mappls SDK Loaded");
+    }
+
+    // --- 3. Gemini API Interaction ---
+    async function analyzeImage() {
+        /*const geminiKey = "AIzaSyB2Bu6E6w9X8Ku_dUstb6frg5WBuQ6qvAE";*/
+        const geminiKey = document.getElementById('geminiKey').value;
+        if (!geminiKey || !base64Image) {
+            alert("Please provide Gemini Key and Image.");
+            return;
+        }
+
+        document.getElementById('loader').style.display = 'block';
+        document.getElementById('result').style.display = 'none';
+        
+        const prompt = `
+            Analyze this image of waste. Return ONLY raw JSON:
+            {
+                "item": "Name of item",
+                "type": "Material type",
+                "recyclable": true/false,
+                "steps": ["Step 1", "Step 2"]
+            }
+        `;
+
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`;
+
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: "image/jpeg", data: base64Image } }] }]
+                })
+            });
+
+            const data = await response.json();
+            const textResponse = data.candidates[0].content.parts[0].text;
+            const cleanJson = textResponse.replace(/```json|```/g, '').trim();
+            const resultData = JSON.parse(cleanJson);
+
+            displayResults(resultData);
+            
+            if(mapplsLoaded) {
+                initMapplsMap(); 
+            } else {
+                alert("Mappls not loaded yet. Click 'Initialize Map System' first.");
+            }
+
+        } catch (error) {
+            console.error(error);
+            alert("Error during analysis.");
+        } finally {
+            document.getElementById('loader').style.display = 'none';
+        }
+    }
+
+    function displayResults(data) {
+        document.getElementById('result').style.display = 'block';
+        document.getElementById('itemName').innerText = data.item;
+        document.getElementById('itemType').innerText = data.type;
+        document.getElementById('isRecyclable').innerText = data.recyclable ? "✅ Yes" : "❌ No";
+        document.getElementById('steps').innerHTML = "<ul>" + data.steps.map(s => `<li>${s}</li>`).join('') + "</ul>";
+    }
+
+    // --- 4. Mappls Map Logic ---
+    function initMapplsMap() {
+        document.getElementById('map').style.display = 'block';
+
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition((position) => {
+                const lat = position.coords.latitude;
+                const lng = position.coords.longitude;
+
+                // Initialize Map
+                mapObject = new Mappls.Map('map', {
+                    center: [lat, lng],
+                    zoom: 12
+                });
+                
+                // Add Marker for User Location
+                new Mappls.Marker({
+                    map: mapObject,
+                    position: { lat: lat, lng: lng },
+                    html: "<div style='color:blue;'>You</div>"
+                });
+
+                // Search for Recycling Centers
+                findNearbyRecycling(lat, lng);
+
+            }, () => alert("Location permission denied."));
+        } else {
+            alert("Geolocation not supported.");
+        }
+    }
+
+    function findNearbyRecycling(lat, lng) {
+        const options = {
+            divId: 'nearby_search', // Internal requirement for plugin
+            map: mapObject,
+            keywords: 'recycling center', // Search query
+            refLocation: `${lat},${lng}`, // Correct format: "lat,lng"
+            fitbounds: true,
+            icon: { url: 'https://apis.mapmyindia.com/map_v3/1.png' } // Standard icon
+        };
+
+        // Call Mappls Nearby Plugin
+        mappls.nearby(options, function(data) {
+            if (data && data.length > 0) {
+                console.log("Found recycling centers:", data);
+            } else {
+                alert("No recycling centers found nearby.");
+            }
+        });
+    }
+</script>
+
+</body>
 </html>
